@@ -26,18 +26,48 @@ type Article struct {
 }
 
 // Source defines a feed to ingest.
+// If Keywords is non-empty, only articles whose title+summary contain at least
+// one keyword (case-insensitive) are kept. Empty Keywords = include everything.
 type Source struct {
-	Name string
-	URL  string
+	Name     string
+	URL      string
+	Keywords []string
 }
+
+// doomKeywords signal acute economic stress — used for broad general-interest
+// sources (Guardian, AP) where we want only crisis-level articles.
+var doomKeywords = []string{
+	"recession", "crisis", "crash", "collapse", "stagflation", "deflation",
+	"default", "bankruptcy", "insolvency", "foreclosure", "eviction",
+	"unemployment", "layoffs", "layoff", "job cuts", "downturn", "contraction",
+	"delinquency", "charge-off", "distress", "contagion", "bubble",
+	"bear market", "sell-off", "selloff", "correction", "shock",
+	"deficit", "debt ceiling", "sovereign debt", "credit downgrade", "downgrade",
+	"negative outlook", "rating cut", "junk", "high yield",
+	"tariff", "trade war", "sanctions", "bank failure", "bank run",
+	"yield curve", "inversion", "rate hike", "rate cut", "federal reserve",
+	"inflation", "cpi", "pce", "consumer price", "housing crash",
+	"mortgage", "liquidity", "credit crunch", "bank stress",
+}
+
+// economicsKeywords is broader — for editorially-curated economic sources
+// (e.g. Naked Capitalism) where general economic language is doom-relevant.
+var economicsKeywords = append(append([]string{},
+	"economic", "financial", "banking", "debt", "market", "trade",
+	"currency", "austerity", "spending cut", "bond", "rate", "gdp",
+	"budget", "fiscal", "monetary", "imf", "world bank", "federal reserve",
+	"interest rate", "inflation", "growth", "contraction",
+), doomKeywords...)
 
 // DefaultSources are free public feeds — no API key required.
 var DefaultSources = []Source{
-	{Name: "Wolf Street", URL: "https://wolfstreet.com/feed/"},
-	{Name: "Calculated Risk", URL: "https://www.calculatedriskblog.com/feeds/posts/default"},
-	{Name: "Federal Reserve", URL: "https://www.federalreserve.gov/feeds/press_all.xml"},
-	{Name: "Reuters Business", URL: "https://feeds.reuters.com/reuters/businessNews"},
-	{Name: "MarketWatch", URL: "https://feeds.marketwatch.com/marketwatch/topstories/"},
+	{Name: "Wolf Street",        URL: "https://wolfstreet.com/feed/"},
+	{Name: "Calculated Risk",    URL: "https://www.calculatedriskblog.com/feeds/posts/default"},
+	{Name: "Federal Reserve",    URL: "https://www.federalreserve.gov/feeds/press_all.xml"},
+	{Name: "MarketWatch",        URL: "https://feeds.marketwatch.com/marketwatch/topstories/"},
+	{Name: "Guardian Economics", URL: "https://www.theguardian.com/business/economics/rss",   Keywords: doomKeywords},
+	{Name: "Naked Capitalism",   URL: "https://www.nakedcapitalism.com/feed",        Keywords: economicsKeywords},
+	{Name: "BBC Business",        URL: "https://feeds.bbci.co.uk/news/business/rss.xml", Keywords: doomKeywords},
 }
 
 // package-level regexes for image extraction
@@ -258,6 +288,21 @@ func extractPageImage(html, articleURL string) string {
 
 func isHTTP(u string) bool { return strings.HasPrefix(u, "http") }
 
+// matchesKeywords returns true if keywords is empty (no filter) or if
+// title+summary contains at least one keyword (case-insensitive).
+func matchesKeywords(title, summary string, keywords []string) bool {
+	if len(keywords) == 0 {
+		return true
+	}
+	haystack := strings.ToLower(title + " " + summary)
+	for _, kw := range keywords {
+		if strings.Contains(haystack, strings.ToLower(kw)) {
+			return true
+		}
+	}
+	return false
+}
+
 func isUIImage(src string) bool {
 	lower := strings.ToLower(src)
 	for _, s := range []string{"logo", "avatar", "gravatar", "favicon", "sprite", "pixel", "1x1", "blank", "placeholder", "icon-", "badge", "button", "arrow", "close", "menu", "header", "footer"} {
@@ -374,12 +419,17 @@ func (f *Fetcher) fetchSource(src Source) ([]Article, error) {
 		if desc == "" {
 			desc = item.Encoded
 		}
-		t := parseDate(item.PubDate)
+		title   := stripHTML(item.Title)
+		summary := truncate(stripHTML(desc), 240)
+		if !matchesKeywords(title, summary, src.Keywords) {
+			continue
+		}
+		t      := parseDate(item.PubDate)
 		imgURL := feedImageFromItem(item.MediaContents, item.MediaThumbnail.URL, item.Enclosure.URL, item.Enclosure.Type, desc)
 		articles = append(articles, Article{
-			Title:    stripHTML(item.Title),
+			Title:    title,
 			URL:      strings.TrimSpace(item.Link),
-			Summary:  truncate(stripHTML(desc), 240),
+			Summary:  summary,
 			Source:   src.Name,
 			PubDate:  t.UTC().Format(time.RFC3339),
 			PubLabel: humanDate(t),
@@ -393,7 +443,12 @@ func (f *Fetcher) fetchSource(src Source) ([]Article, error) {
 		if body == "" {
 			body = entry.Content
 		}
-		t := parseDate(entry.Updated)
+		title   := stripHTML(entry.Title)
+		summary := truncate(stripHTML(body), 240)
+		if !matchesKeywords(title, summary, src.Keywords) {
+			continue
+		}
+		t      := parseDate(entry.Updated)
 		imgURL := entry.MediaContent.URL
 		if imgURL == "" {
 			imgURL = entry.MediaThumbnail.URL
@@ -402,9 +457,9 @@ func (f *Fetcher) fetchSource(src Source) ([]Article, error) {
 			imgURL = extractImgSrc(body)
 		}
 		articles = append(articles, Article{
-			Title:    stripHTML(entry.Title),
+			Title:    title,
 			URL:      link,
-			Summary:  truncate(stripHTML(body), 240),
+			Summary:  summary,
 			Source:   src.Name,
 			PubDate:  t.UTC().Format(time.RFC3339),
 			PubLabel: humanDate(t),

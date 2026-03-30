@@ -310,6 +310,24 @@
     @media (max-width: 480px) {
       .article-img { width: 90px; height: 110px; }
     }
+
+    /* ── COMMODITY GRID ── */
+    .commodity-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+    .commodity-card {
+      background: var(--card); border: 1px solid var(--border); padding: 16px;
+      animation: fade-up .4s ease both; transition: border-color .3s;
+    }
+    .commodity-card:hover { border-color: var(--border-hot); }
+    .commodity-name  { font-family: 'Creepster', cursive; font-size: 15px; color: var(--text-bright); letter-spacing: 1px; }
+    .commodity-sub   { font-size: 9px; letter-spacing: 2px; color: var(--text-dim); margin-bottom: 10px; text-transform: uppercase; }
+    .commodity-price { font-size: 26px; font-weight: 700; color: var(--text-bright); letter-spacing: -1px; line-height: 1; }
+    .commodity-date  { font-size: 10px; color: var(--text-dim); margin: 4px 0 10px; }
+    .commodity-change { text-align: right; }
+    .commodity-change .chg-pct    { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.1; }
+    .commodity-change .chg-period { font-size: 9px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; }
+    .commodity-change.up   .chg-pct { color: var(--red); }
+    .commodity-change.down .chg-pct { color: var(--green); }
+    .commodity-change.flat .chg-pct { color: var(--text-dim); }
   </style>
 </head>
 <body>
@@ -521,6 +539,24 @@
 
   </div>
 
+  <!-- ── COMMODITY PRICES ── -->
+  <div class="section-head" style="margin-top: 40px">
+    <div class="section-title">🛒 Commodity Prices</div>
+    <div class="section-line"></div>
+    <div class="section-meta">BLS AVG PRICES VIA FRED · MONTHLY</div>
+  </div>
+
+  <div class="article-filters" id="commodity-range-btns" style="margin-bottom:16px">
+    <button class="filter-btn" data-months="12">1Y</button>
+    <button class="filter-btn active" data-months="24">2Y</button>
+    <button class="filter-btn" data-months="60">5Y</button>
+    <button class="filter-btn" data-months="120">10Y</button>
+  </div>
+
+  <div class="commodity-grid" id="commodity-grid">
+    <div class="loading-sub" style="text-align:center;padding:24px">Loading...</div>
+  </div>
+
   <!-- ── INTELLIGENCE FEED ── -->
   <div class="section-head" style="margin-top: 40px">
     <div class="section-title">📡 Intelligence Feed</div>
@@ -588,6 +624,7 @@
   };
 
   const CATEGORY_ORDER = ['Rates & Credit','Labor','Recession Risk','Housing','Consumer Credit'];
+  const CONSUMER_CHART_SERIES = new Set(['DROCLACBS','DRCCLACBS','CORCACBS','CORCCACBS']);
   // Van Readiness indicators handled separately in that section
 
   // ── SOURCE COLORS ─────────────────────────────────────────────────────────
@@ -741,10 +778,17 @@
       `).join('');
 
     document.getElementById('indicators-panel').innerHTML = html || '<div class="loading-sub">No indicators loaded.</div>';
+    requestAnimationFrame(loadConsumerIndCharts);
   }
 
   function renderIndCard(item, index) {
     const lore = LORE[item.series] || { title: item.name, tagline: '', icon: '📊' };
+    const chartHtml = CONSUMER_CHART_SERIES.has(item.series)
+      ? `<div class="mini-chart">
+          <div class="mini-chart-label">8-quarter trend</div>
+          <div id="ind-chart-${item.series}"><div class="chart-loading" style="font-size:10px;padding:8px 0;text-align:center">Loading...</div></div>
+        </div>`
+      : '';
     return `
       <div class="ind-card ${statusClass(item.status)}" style="animation-delay:${index * 0.07}s">
         <span class="ind-icon">${lore.icon}</span>
@@ -756,6 +800,7 @@
           <div class="status-badge ${badgeClass(item.status)}">${item.status}</div>
         </div>
         <div class="ind-date">As of ${item.date || 'N/A'}</div>
+        ${chartHtml}
       </div>`;
   }
 
@@ -818,11 +863,19 @@
       if (!json.success) throw new Error(json.error);
       // Wait for layout
       requestAnimationFrame(() => drawBars(containerId, json.points, opts));
+      if (opts.onData) opts.onData(json.points);
     } catch (err) {
       console.error(`[ERROR] chart ${seriesId}:`, err);
       const el = document.getElementById(containerId);
       if (el) el.innerHTML = `<div class="chart-loading" style="color:var(--red-dim)">Chart unavailable</div>`;
     }
+  }
+
+  function loadConsumerIndCharts() {
+    loadChart('DROCLACBS', 'ind-chart-DROCLACBS', { limit:8, suffix:'%', decimals:2, height:60 });
+    loadChart('DRCCLACBS', 'ind-chart-DRCCLACBS', { limit:8, suffix:'%', decimals:2, height:60 });
+    loadChart('CORCACBS',  'ind-chart-CORCACBS',  { limit:8, suffix:'%', decimals:2, height:60 });
+    loadChart('CORCCACBS', 'ind-chart-CORCCACBS', { limit:8, suffix:'%', decimals:2, height:60 });
   }
 
   function loadAllCharts() {
@@ -974,14 +1027,104 @@
     cardEl.classList.add('has-image');
   }
 
+  // ── COMMODITIES ───────────────────────────────────────────────────────────
+  // BLS Average Price series from FRED — actual dollar prices, updated monthly
+  const COMMODITIES = [
+    { series:'APU0000708111', name:'Eggs, Grade A Large', icon:'🥚', sub:'per dozen',         prefix:'$', decimals:3 },
+    { series:'APU0000703112', name:'Ground Beef',          icon:'🥩', sub:'per lb',            prefix:'$', decimals:3 },
+    { series:'APU0000704111', name:'Bacon, Sliced',        icon:'🥓', sub:'per lb',            prefix:'$', decimals:3 },
+    { series:'APU0000706111', name:'Chicken, Whole',       icon:'🍗', sub:'per lb',            prefix:'$', decimals:3 },
+    { series:'APU0000709112', name:'Whole Milk',           icon:'🥛', sub:'per gallon',        prefix:'$', decimals:3 },
+    { series:'APU0000FF1101', name:'White Bread',          icon:'🍞', sub:'per lb',            prefix:'$', decimals:3 },
+    { series:'APU0000717311', name:'Coffee, Ground Roast', icon:'☕', sub:'per lb',            prefix:'$', decimals:3 },
+    { series:'CUSR0000SAF11', name:'Food at Home CPI',     icon:'🛒', sub:'index (82-84=100)', prefix:'',  decimals:1 },
+  ];
+
+  let commodityMonths = 24;
+
+  function renderCommodityCards() {
+    document.getElementById('commodity-grid').innerHTML = COMMODITIES.map((c, i) => `
+      <div class="commodity-card" style="animation-delay:${i * 0.05}s">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:20px">${c.icon}</span>
+          <div>
+            <div class="commodity-name">${c.name}</div>
+            <div class="commodity-sub">${c.sub}</div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:4px">
+          <div class="commodity-price" id="com-value-${c.series}">—</div>
+          <div class="commodity-change" id="com-change-${c.series}">
+            <div class="chg-pct">—</div>
+            <div class="chg-period">loading</div>
+          </div>
+        </div>
+        <div class="commodity-date" id="com-date-${c.series}"></div>
+        <div class="chart-wrap" style="margin-top:0">
+          <div id="com-chart-${c.series}"><div class="chart-loading">Loading chart...</div></div>
+          <div class="chart-stats" id="com-chart-stats-${c.series}"></div>
+        </div>
+      </div>`).join('');
+  }
+
+  function loadCommodityCharts(months) {
+    commodityMonths = months;
+    COMMODITIES.forEach(c => {
+      loadChart(c.series, `com-chart-${c.series}`, {
+        limit:    months,
+        prefix:   c.prefix,
+        decimals: c.decimals,
+        height:   70,
+        onData: points => {
+          if (!points.length) return;
+          const last     = points[points.length - 1];
+          const first    = points[0];
+          const valEl    = document.getElementById(`com-value-${c.series}`);
+          const dtEl     = document.getElementById(`com-date-${c.series}`);
+          const changeEl = document.getElementById(`com-change-${c.series}`);
+          if (valEl) valEl.textContent = c.prefix + last.value.toFixed(c.decimals);
+          if (dtEl)  dtEl.textContent  = 'As of ' + last.date;
+          if (changeEl && points.length >= 2) {
+            const pct    = ((last.value - first.value) / first.value) * 100;
+            const period = months >= 120 ? '10Y' : months >= 60 ? '5Y' : months >= 24 ? '2Y' : '1Y';
+            const pctEl  = changeEl.querySelector('.chg-pct');
+            const perEl  = changeEl.querySelector('.chg-period');
+            if (Math.abs(pct) < 0.05) {
+              changeEl.className = 'commodity-change flat';
+              if (pctEl) pctEl.textContent = '→ flat';
+            } else if (pct > 0) {
+              changeEl.className = 'commodity-change up';
+              if (pctEl) pctEl.textContent = `▲ +${pct.toFixed(1)}%`;
+            } else {
+              changeEl.className = 'commodity-change down';
+              if (pctEl) pctEl.textContent = `▼ ${pct.toFixed(1)}%`;
+            }
+            if (perEl) perEl.textContent = period + ' change';
+          }
+        },
+      });
+    });
+  }
+
+  document.getElementById('commodity-range-btns').addEventListener('click', e => {
+    const btn = e.target.closest('.filter-btn');
+    if (!btn || !btn.dataset.months) return;
+    document.querySelectorAll('#commodity-range-btns .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadCommodityCharts(parseInt(btn.dataset.months, 10));
+  });
+
   // ── BOOT ──────────────────────────────────────────────────────────────────
   loadIndicators();
   loadArticles();
   loadAllCharts();
+  renderCommodityCards();
+  loadCommodityCharts(commodityMonths);
 
-  setInterval(loadIndicators, 5  * 60 * 1000);
-  setInterval(loadArticles,   15 * 60 * 1000);
-  setInterval(loadAllCharts,  30 * 60 * 1000);
+  setInterval(loadIndicators,                    5  * 60 * 1000);
+  setInterval(loadArticles,                      15 * 60 * 1000);
+  setInterval(loadAllCharts,                     30 * 60 * 1000);
+  setInterval(() => loadCommodityCharts(commodityMonths), 30 * 60 * 1000);
 </script>
 </body>
 </html>
