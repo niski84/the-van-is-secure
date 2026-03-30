@@ -1,0 +1,21 @@
+# Binary (root-level only, not the cmd/ directory)
+/keep-it-mobile
+
+# Environment / secrets
+.env
+*.env
+
+# Runtime files
+*.log
+*.pid
+
+# Image disk cache
+/tmp/van-img-cache/
+
+# Go build cache
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
