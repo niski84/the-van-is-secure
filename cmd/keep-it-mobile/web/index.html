@@ -138,8 +138,13 @@
 
     .ind-icon   { font-size: 20px; margin-bottom: 6px; display: block; }
     .ind-title  { font-family: 'Creepster', cursive; font-size: 16px; color: var(--text-bright); letter-spacing: 1px; }
-    .ind-series { font-size: 9px; letter-spacing: 3px; color: var(--text-dim); margin-bottom: 8px; }
-    .ind-tagline{ font-size: 11px; color: var(--text-dim); font-style: italic; line-height: 1.5; }
+    .ind-series { font-size: 9px; letter-spacing: 3px; color: var(--text-dim); margin-bottom: 6px; }
+    .ind-tagline{ font-size: 10px; color: var(--text-dim); font-style: italic; line-height: 1.4; margin-bottom: 6px; }
+    .ind-desc   {
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      font-size: 12px; color: var(--text); line-height: 1.6;
+      padding-top: 8px; border-top: 1px solid var(--border);
+    }
     .ind-value-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
     .ind-value  { font-size: 24px; font-weight: 700; color: var(--text-bright); letter-spacing: -1px; }
     .ind-date   { font-size: 10px; color: var(--text-dim); margin-top: 6px; }
@@ -605,22 +610,35 @@
   // ── LORE ─────────────────────────────────────────────────────────────────
   const LORE = {
     // Core recession
-    'T10Y2Y':        { category:'Rates & Credit', title:'Treasury Death Spiral',    tagline:'Short-term debt costs more than long-term. The empire cracks.',              icon:'📉' },
-    'T10Y3MM':       { category:'Rates & Credit', title:'The Federal Omen',          tagline:'3 months against 10 years. Time bends before the reckoning.',                icon:'⏳' },
-    'BAA10YM':       { category:'Rates & Credit', title:'Corporate Abyss',           tagline:'The spread between the safe and the damned widens in the dark.',             icon:'🕳️' },
-    'UNRATE':        { category:'Labor',           title:'The Unemployment Reaper',   tagline:'Sahm Rule stirs. When the jobless surge, the recession has begun.',          icon:'💀' },
-    'RECPROUSM156N': { category:'Recession Risk',  title:'The Doomsday Clock',        tagline:"The Federal Reserve's own reckoning — your economic fate, quantified.",      icon:'☠️' },
+    'T10Y2Y':        { category:'Rates & Credit', title:'Treasury Death Spiral',    tagline:'Short-term debt costs more than long-term. The empire cracks.',              icon:'📉',
+                       desc:'Spread between 10-year and 2-year Treasury yields. When negative (inverted), short-term borrowing costs exceed long-term — a reliable recession warning that has preceded every US downturn since 1980, typically by 6–18 months.' },
+    'T10Y3MM':       { category:'Rates & Credit', title:'The Federal Omen',          tagline:'3 months against 10 years. Time bends before the reckoning.',                icon:'⏳',
+                       desc:'10-year Treasury yield minus the 3-month T-bill rate. The Fed considers this the most predictive yield curve measure. An inversion has preceded every US recession since 1968.' },
+    'BAA10YM':       { category:'Rates & Credit', title:'Corporate Abyss',           tagline:'The spread between the safe and the damned widens in the dark.',             icon:'🕳️',
+                       desc:'Extra yield investors demand to hold BBB-rated corporate bonds over 10-year Treasuries. Widening spreads signal that credit markets are pricing in rising default risk — a sign financial conditions are tightening economy-wide.' },
+    'UNRATE':        { category:'Labor',           title:'The Unemployment Reaper',   tagline:'Sahm Rule stirs. When the jobless surge, the recession has begun.',          icon:'💀',
+                       desc:'Sahm Rule: triggers when the 3-month average unemployment rate rises 0.5 points above its 12-month low. Created by economist Claudia Sahm, it has identified the start of every US recession in real time since 1970.' },
+    'RECPROUSM156N': { category:'Recession Risk',  title:'The Doomsday Clock',        tagline:"The Federal Reserve's own reckoning — your economic fate, quantified.",      icon:'☠️',
+                       desc:"NY Fed model estimating the probability of US recession in the next 12 months, derived from the Treasury yield curve. Readings above 30% have historically coincided with or immediately preceded recessions." },
     // Housing
-    'MORTGAGE30US':  { category:'Housing',         title:'Mortgage Shackle',          tagline:'30-year fixed rate. The price of a permanent shelter in a collapsing market.', icon:'🏚️' },
-    'CUSR0000SEHA':  { category:'Housing',         title:'Rent Spiral',               tagline:'Year-over-year rent inflation. The squeeze tightening on those without walls.', icon:'📈' },
-    'RRVRUSQ156N':   { category:'Housing',         title:'Vacancy Void',              tagline:'Rental vacancy rate. Fewer empty units signals a compressed, locked market.', icon:'🔑' },
+    'MORTGAGE30US':  { category:'Housing',         title:'Mortgage Shackle',          tagline:'30-year fixed rate. The price of a permanent shelter in a collapsing market.', icon:'🏚️',
+                       desc:'National average rate on a 30-year fixed mortgage. Higher rates reduce affordability, suppress home sales, and slow construction — often the first major sector to feel monetary tightening, with ripple effects across consumer wealth.' },
+    'CUSR0000SEHA':  { category:'Housing',         title:'Rent Spiral',               tagline:'Year-over-year rent inflation. The squeeze tightening on those without walls.', icon:'📈',
+                       desc:'Year-over-year change in CPI shelter costs (rent + owners\' equivalent rent). One of the stickiest components of inflation — lags real rents by 12+ months, keeping headline CPI elevated long after market rents peak.' },
+    'RRVRUSQ156N':   { category:'Housing',         title:'Vacancy Void',              tagline:'Rental vacancy rate. Fewer empty units signals a compressed, locked market.', icon:'🔑',
+                       desc:'Percentage of rental units sitting vacant nationwide. Low vacancy gives landlords pricing power. Below 5% correlates with accelerating rent increases; above 7% signals a renter\'s market with softening prices.' },
     // Consumer credit
-    'DROCLACBS':     { category:'Consumer Credit', title:'Auto & Consumer 30+ DPD',   tagline:'Other consumer loans (auto proxy) past due. The first debts to break.',      icon:'🚗' },
-    'DRCCLACBS':     { category:'Consumer Credit', title:'Plastic Unraveling',        tagline:'Credit card delinquency. When the cards stop getting paid, panic follows.',   icon:'💳' },
-    'CORCACBS':      { category:'Consumer Credit', title:'Consumer Charge-Offs',      tagline:'Loans written off as lost causes. The banks have stopped expecting repayment.', icon:'🗑️' },
-    'CORCCACBS':     { category:'Consumer Credit', title:'Card Charge-Off Rate',      tagline:'Credit card losses. Charged off and written into the void.',                 icon:'🔥' },
+    'DROCLACBS':     { category:'Consumer Credit', title:'Auto & Consumer 30+ DPD',   tagline:'Other consumer loans (auto proxy) past due. The first debts to break.',      icon:'🚗',
+                       desc:'Share of auto and consumer loans at commercial banks 30+ days past due. Auto loans are typically among the first debts to go delinquent when household finances deteriorate — an early warning of broader consumer stress.' },
+    'DRCCLACBS':     { category:'Consumer Credit', title:'Plastic Unraveling',        tagline:'Credit card delinquency. When the cards stop getting paid, panic follows.',   icon:'💳',
+                       desc:'Percentage of credit card balances at least 30 days overdue. Cards are often the last bill consumers stop paying, so rising delinquencies here signal that household finances have already deteriorated significantly.' },
+    'CORCACBS':      { category:'Consumer Credit', title:'Consumer Charge-Offs',      tagline:'Loans written off as lost causes. The banks have stopped expecting repayment.', icon:'🗑️',
+                       desc:'Consumer loans written off as uncollectible, as a percent of total balances. Banks realizing losses typically respond by tightening lending standards, reducing credit availability across the broader economy.' },
+    'CORCCACBS':     { category:'Consumer Credit', title:'Card Charge-Off Rate',      tagline:'Credit card losses. Charged off and written into the void.',                 icon:'🔥',
+                       desc:'Credit card balances written off as unrecoverable losses. Spikes sharply during recessions as income falls and debt loads become unsustainable. A key Fed metric for tracking household financial health and bank system stress.' },
     // Fuel (appears in Van Readiness but also scored)
-    'GASREGCOVW':    { category:'Van Readiness',   title:'Fuel Cost Index',           tagline:'US regular gasoline. What it costs to keep the van moving.',                 icon:'⛽' },
+    'GASREGCOVW':    { category:'Van Readiness',   title:'Fuel Cost Index',           tagline:'US regular gasoline. What it costs to keep the van moving.',                 icon:'⛽',
+                       desc:'Weekly average retail price of regular gasoline. Energy costs affect both consumer disposable income and business operating expenses. Sustained high prices historically correlate with reduced consumer spending and slower growth.' },
   };
 
   const CATEGORY_ORDER = ['Rates & Credit','Labor','Recession Risk','Housing','Consumer Credit'];
@@ -795,6 +813,7 @@
         <div class="ind-title">${lore.title}</div>
         <div class="ind-series">${item.series}</div>
         <div class="ind-tagline">${lore.tagline}</div>
+        ${lore.desc ? `<div class="ind-desc">${lore.desc}</div>` : ''}
         <div class="ind-value-row">
           <div class="ind-value">${formatValue(item)}</div>
           <div class="status-badge ${badgeClass(item.status)}">${item.status}</div>
