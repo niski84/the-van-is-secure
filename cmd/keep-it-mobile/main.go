@@ -60,11 +60,27 @@ func main() {
 
 	srv := server.NewServer(fredClient, feedFetcher, ic)
 
+	// Pre-warm the FRED cache at startup so the first user request is never cold.
+	// Re-warms every 23 h to stay within the 24 h TTL — at most one FRED session per day.
+	go func() {
+		srv.WarmCache()
+		t := time.NewTicker(23 * time.Hour)
+		defer t.Stop()
+		for range t.C {
+			srv.WarmCache()
+		}
+	}()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", server.HandleHealth)
 	mux.HandleFunc("/api/indicators", srv.HandleIndicators)
 	mux.HandleFunc("/api/articles", srv.HandleArticles)
 	mux.HandleFunc("/api/chart", srv.HandleChart)
+	mux.HandleFunc("/api/commodities", srv.HandleCommodities)
+	mux.HandleFunc("/api/metals", srv.HandleMetals)
+	mux.HandleFunc("/api/jolts", srv.HandleJOLTS)
+	mux.HandleFunc("/api/employment", srv.HandleEmployment)
+	mux.HandleFunc("/api/crypto", srv.HandleCrypto)
 	mux.HandleFunc("/api/article-image", srv.HandleArticleImage)
 	mux.HandleFunc("/img/cache/", srv.HandleCachedImage)
 
