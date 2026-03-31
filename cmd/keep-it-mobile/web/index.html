@@ -21,11 +21,14 @@
       --text-bright:#e8c8d8;
       --red:        #ff1030;
       --red-dim:    #7a0018;
+      --orange:     #ff6600;
+      --orange-dim: #7a3000;
       --yellow:     #ffaa00;
       --yellow-dim: #7a5000;
+      --teal:       #00c9b1;
+      --teal-dim:   #005a50;
       --green:      #00e87a;
       --green-dim:  #005a30;
-      --orange:     #ff6600;
       --accent:     #cc0033;
     }
 
@@ -47,8 +50,9 @@
     /* ── ANIMATIONS ── */
     @keyframes flicker       { 0%,90%,100%{opacity:1} 92%{opacity:.7} 95%{opacity:1} 97%{opacity:.5} }
     @keyframes pulse-red     { 0%,100%{box-shadow:0 0 10px #ff103025,0 0 20px #ff103010} 50%{box-shadow:0 0 28px #ff1030aa,0 0 55px #ff103040} }
-    @keyframes pulse-yellow  { 0%,100%{box-shadow:0 0 10px #ffaa0025,0 0 20px #ffaa0010} 50%{box-shadow:0 0 28px #ffaa00aa,0 0 55px #ffaa0040} }
     @keyframes pulse-orange  { 0%,100%{box-shadow:0 0 10px #ff660025,0 0 20px #ff660010} 50%{box-shadow:0 0 28px #ff6600aa,0 0 55px #ff660040} }
+    @keyframes pulse-yellow  { 0%,100%{box-shadow:0 0 10px #ffaa0025,0 0 20px #ffaa0010} 50%{box-shadow:0 0 28px #ffaa00aa,0 0 55px #ffaa0040} }
+    @keyframes pulse-teal    { 0%,100%{box-shadow:0 0 10px #00c9b125,0 0 20px #00c9b110} 50%{box-shadow:0 0 28px #00c9b160,0 0 55px #00c9b125} }
     @keyframes shake         { 0%,100%{transform:rotate(0)} 20%{transform:rotate(-2deg) translateX(-1px)} 60%{transform:rotate(2deg) translateX(1px)} }
     @keyframes fade-up       { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
     @keyframes badge-blink   { 0%,100%{opacity:1} 50%{opacity:.55} }
@@ -116,6 +120,38 @@
     .stress-bar-track { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
     .stress-bar-fill  { height: 100%; border-radius: 2px; animation: stress-grow 1.2s ease both; transition: width 1s ease, background-color 1s ease; }
 
+    /* ── CLUSTER STRIP ── */
+    .cluster-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin: 18px 0 28px; }
+    @media (max-width: 960px) { .cluster-strip { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 520px) { .cluster-strip { grid-template-columns: repeat(2, 1fr); } }
+    .cluster-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      padding: 12px 10px 10px; text-align: center;
+      transition: border-color .3s; position: relative; overflow: hidden;
+    }
+    .cluster-card::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
+      transition: background .3s;
+    }
+    .cluster-card.cs-critical { border-color: var(--red-dim);    animation: pulse-red    4s infinite; }
+    .cluster-card.cs-critical::after { background: var(--red); }
+    .cluster-card.cs-stressed { border-color: var(--orange-dim); animation: pulse-orange 4.5s infinite; }
+    .cluster-card.cs-stressed::after { background: var(--orange); }
+    .cluster-card.cs-elevated { border-color: var(--yellow-dim); animation: pulse-yellow 5s infinite; }
+    .cluster-card.cs-elevated::after { background: var(--yellow); }
+    .cluster-card.cs-watch    { border-color: var(--teal-dim);   animation: pulse-teal   6s infinite; }
+    .cluster-card.cs-watch::after    { background: var(--teal); }
+    .cluster-card.cs-clear::after    { background: var(--green-dim); }
+    .cluster-icon  { font-size: 18px; display: block; margin-bottom: 4px; }
+    .cluster-name  { font-size: 8px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 6px; }
+    .cluster-score { font-family: 'Creepster', cursive; font-size: 28px; line-height: 1; letter-spacing: -1px; margin-bottom: 3px; }
+    .cluster-score.cs-critical { color: var(--red); }
+    .cluster-score.cs-stressed { color: var(--orange); }
+    .cluster-score.cs-elevated { color: var(--yellow); }
+    .cluster-score.cs-watch    { color: var(--teal); }
+    .cluster-score.cs-clear    { color: var(--green); }
+    .cluster-alerts { font-size: 8px; color: var(--text-dim); letter-spacing: 1px; }
+
     /* ── SECTION HEADER ── */
     .section-head { display: flex; align-items: center; gap: 12px; margin: 36px 0 18px; }
     .section-title { font-family: 'Creepster', cursive; font-size: 20px; color: var(--text-bright); letter-spacing: 2px; white-space: nowrap; }
@@ -144,9 +180,18 @@
     .ind-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:var(--border); transition:background .3s; }
     .ind-card:hover { border-color: var(--border-hot); }
     .ind-card:hover::before { background: var(--red-dim); }
-    .ind-card.s-red    { border-color: var(--red-dim); animation: fade-up .4s ease both, pulse-red 3.5s infinite; }
-    .ind-card.s-red::before { background: var(--red-dim); }
-    .ind-card.s-yellow { border-color: var(--yellow-dim); animation: fade-up .4s ease both, pulse-yellow 4s infinite; }
+    .ind-card.s-critical { border-color: var(--red-dim);    animation: fade-up .4s ease both, pulse-red    3.5s infinite; }
+    .ind-card.s-critical::before { background: var(--red-dim); }
+    .ind-card.s-stressed { border-color: var(--orange-dim); animation: fade-up .4s ease both, pulse-orange 4s   infinite; }
+    .ind-card.s-stressed::before { background: var(--orange-dim); }
+    .ind-card.s-elevated { border-color: var(--yellow-dim); animation: fade-up .4s ease both, pulse-yellow 4.5s infinite; }
+    .ind-card.s-elevated::before { background: var(--yellow-dim); }
+    .ind-card.s-watch    { border-color: var(--teal-dim);   animation: fade-up .4s ease both, pulse-teal   5s   infinite; }
+    .ind-card.s-watch::before    { background: var(--teal-dim); }
+    /* legacy aliases */
+    .ind-card.s-red    { border-color: var(--red-dim);    animation: fade-up .4s ease both, pulse-red    3.5s infinite; }
+    .ind-card.s-red::before    { background: var(--red-dim); }
+    .ind-card.s-yellow { border-color: var(--yellow-dim); animation: fade-up .4s ease both, pulse-yellow 4s   infinite; }
     .ind-card.s-yellow::before { background: var(--yellow-dim); }
 
     .ind-icon   { font-size: 20px; margin-bottom: 6px; display: block; }
@@ -162,10 +207,16 @@
     .ind-value  { font-size: 24px; font-weight: 700; color: var(--text-bright); letter-spacing: -1px; }
     .ind-date   { font-size: 10px; color: var(--text-dim); margin-top: 6px; }
 
-    .status-badge { font-size: 9px; letter-spacing: 2px; padding: 3px 8px; border: 1px solid; text-transform: uppercase; }
-    .badge-red    { color: var(--red); border-color: var(--red); background: #ff103010; animation: badge-blink 2s infinite; }
+    .status-badge    { font-size: 9px; letter-spacing: 2px; padding: 3px 8px; border: 1px solid; text-transform: uppercase; }
+    .badge-critical  { color: var(--red);    border-color: var(--red);    background: #ff103010; animation: badge-blink 2s infinite; }
+    .badge-stressed  { color: var(--orange); border-color: var(--orange); background: #ff660010; }
+    .badge-elevated  { color: var(--yellow); border-color: var(--yellow); background: #ffaa0010; }
+    .badge-watch     { color: var(--teal);   border-color: var(--teal);   background: #00c9b10c; }
+    .badge-clear     { color: var(--green);  border-color: var(--green);  background: #00e87a0c; }
+    /* legacy aliases kept for crypto/commodity sections that emit GREEN/YELLOW/RED */
+    .badge-red    { color: var(--red);    border-color: var(--red);    background: #ff103010; animation: badge-blink 2s infinite; }
     .badge-yellow { color: var(--yellow); border-color: var(--yellow); background: #ffaa0010; }
-    .badge-green  { color: var(--green); border-color: var(--green); background: #00e87a0c; }
+    .badge-green  { color: var(--green);  border-color: var(--green);  background: #00e87a0c; }
 
     /* ── MINI BAR CHART (inside card) ── */
     .mini-chart { margin-top: 10px; }
@@ -421,6 +472,12 @@
         <div class="stress-bar-fill" id="stress-bar" style="width:0%"></div>
       </div>
     </div>
+  </div>
+
+  <!-- ── CLUSTER SCORE STRIP ── -->
+  <div style="font-size:9px;letter-spacing:4px;color:var(--text-dim);text-transform:uppercase;margin-top:22px;margin-bottom:8px">◈ Sector Stress Clusters ◈</div>
+  <div class="cluster-strip" id="cluster-strip">
+    <!-- populated by JS -->
   </div>
 
   <!-- ── DASHBOARD ── -->
@@ -888,14 +945,50 @@
   const srcColor = n => SRC_COLORS[n] || '#665566';
 
   // ── UTILS ─────────────────────────────────────────────────────────────────
-  function statusClass(s) { return s==='RED'?'s-red':s==='YELLOW'?'s-yellow':'s-green'; }
-  function badgeClass(s)  { return s==='RED'?'badge-red':s==='YELLOW'?'badge-yellow':'badge-green'; }
+  // 5-level status: CLEAR / WATCH / ELEVATED / STRESSED / CRITICAL
+  // Also accepts legacy GREEN / YELLOW / RED from crypto/commodity endpoints
+  function statusClass(s) {
+    switch (s) {
+      case 'CRITICAL': return 's-critical';
+      case 'STRESSED': return 's-stressed';
+      case 'ELEVATED': return 's-elevated';
+      case 'WATCH':    return 's-watch';
+      case 'CLEAR':    return 's-clear';
+      // legacy
+      case 'RED':      return 's-red';
+      case 'YELLOW':   return 's-yellow';
+      default:         return 's-green';
+    }
+  }
+  function badgeClass(s) {
+    switch (s) {
+      case 'CRITICAL': return 'badge-critical';
+      case 'STRESSED': return 'badge-stressed';
+      case 'ELEVATED': return 'badge-elevated';
+      case 'WATCH':    return 'badge-watch';
+      case 'CLEAR':    return 'badge-clear';
+      // legacy
+      case 'RED':      return 'badge-red';
+      case 'YELLOW':   return 'badge-yellow';
+      default:         return 'badge-green';
+    }
+  }
+  function clusterClass(s) {
+    switch (s) {
+      case 'CRITICAL': return 'cs-critical';
+      case 'STRESSED': return 'cs-stressed';
+      case 'ELEVATED': return 'cs-elevated';
+      case 'WATCH':    return 'cs-watch';
+      default:         return 'cs-clear';
+    }
+  }
   function bandCls(b)     { return 'band-'+(b||'normal').toLowerCase(); }
 
   function stressColor(score) {
-    if (score < 34) return 'var(--green)';
-    if (score < 67) return 'var(--yellow)';
-    if (score < 85) return 'var(--orange)';
+    if (score < 25)  return 'var(--green)';
+    if (score < 45)  return 'var(--teal)';
+    if (score < 62)  return 'var(--yellow)';
+    if (score < 80)  return 'var(--orange)';
     return 'var(--red)';
   }
 
@@ -979,6 +1072,7 @@
 
       indicatorData = json.data || [];
       updateStatusBanner(json);
+      renderClusterStrip(json.clusters);
       renderIndicators(indicatorData);
       updateReadinessFromIndicators(indicatorData);
 
@@ -1007,6 +1101,25 @@
     4: 'WATCH CONDITIONS',
     5: 'HOLDING STEADY',
   };
+
+  function renderClusterStrip(clusters) {
+    if (!clusters || !clusters.length) return;
+    const strip = document.getElementById('cluster-strip');
+    if (!strip) return;
+    strip.innerHTML = clusters.map(c => {
+      const cc = clusterClass(c.status);
+      const alertTxt = c.alert_count === 0
+        ? 'all clear'
+        : `${c.alert_count}/${c.total} elevated`;
+      return `
+        <div class="cluster-card ${cc}" title="${c.name}: ${c.alert_count} of ${c.total} indicators elevated">
+          <span class="cluster-icon">${c.icon}</span>
+          <div class="cluster-name">${c.name}</div>
+          <div class="cluster-score ${cc}">${c.score}</div>
+          <div class="cluster-alerts">${alertTxt}</div>
+        </div>`;
+    }).join('');
+  }
 
   function updateStatusBanner(json) {
     const score = json.stress_score || 0;

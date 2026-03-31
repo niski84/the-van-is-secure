@@ -58,11 +58,18 @@ func ComputeSahm(observations []fred.Observation) (*IndicatorResult, error) {
 	sahmValue := latestMA3 - minPriorMA3
 	log.Printf("Sahm calculation: latestMA3=%f, minPriorMA3=%f, sahm=%f", latestMA3, minPriorMA3, sahmValue)
 
-	status := Green
-	if sahmValue >= 0.50 {
-		status = Red
-	} else if sahmValue >= 0.35 {
-		status = Yellow
+	var status Status
+	switch {
+	case sahmValue >= 0.70:
+		status = Critical
+	case sahmValue >= 0.50:
+		status = Stressed // triggered
+	case sahmValue >= 0.35:
+		status = Elevated // approaching trigger
+	case sahmValue >= 0.20:
+		status = Watch
+	default:
+		status = Clear
 	}
 
 	return &IndicatorResult{

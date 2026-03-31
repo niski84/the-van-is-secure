@@ -10,9 +10,11 @@ import (
 type Status string
 
 const (
-	Green  Status = "GREEN"
-	Yellow Status = "YELLOW"
-	Red    Status = "RED"
+	Clear    Status = "CLEAR"    // nominal — all good
+	Watch    Status = "WATCH"    // minor deviation — worth noting
+	Elevated Status = "ELEVATED" // stress building — pay attention
+	Stressed Status = "STRESSED" // significant — preparation warranted
+	Critical Status = "CRITICAL" // crisis conditions — act now
 )
 
 type IndicatorResult struct {
@@ -24,97 +26,124 @@ type IndicatorResult struct {
 	Note   string  `json:"note"`
 }
 
+// level5 classifies value against four ascending thresholds (watch, elevated, stressed, critical).
+// If higherIsBad=true, higher values move up the scale; if false, lower values are worse.
+func level5(value, watchT, elevatedT, stressedT, criticalT float64, higherIsBad bool) Status {
+	stress := value
+	if !higherIsBad {
+		stress = -value
+		watchT, elevatedT, stressedT, criticalT = -watchT, -elevatedT, -stressedT, -criticalT
+		// flip sign so we can compare uniformly
+		watchT, elevatedT, stressedT, criticalT = -criticalT, -stressedT, -elevatedT, -watchT
+		stress = -value
+	}
+	switch {
+	case stress >= criticalT:
+		return Critical
+	case stress >= stressedT:
+		return Stressed
+	case stress >= elevatedT:
+		return Elevated
+	case stress >= watchT:
+		return Watch
+	default:
+		return Clear
+	}
+}
+
 func ScoreYieldCurve(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring yield curve %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value < 0 {
-		status = Red
-	} else if value <= 0.50 {
-		status = Yellow
+	// Positive = normal (long > short). Inversion historically precedes recessions.
+	var status Status
+	switch {
+	case value < -0.50:
+		status = Critical // deeply inverted
+	case value < 0:
+		status = Stressed // inverted
+	case value < 0.25:
+		status = Elevated // approaching inversion
+	case value < 0.75:
+		status = Watch // narrow spread
+	default:
+		status = Clear
 	}
-
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value}, nil
 }
 
 func ScoreCreditSpread(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring credit spread %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= 3.00 {
-		status = Red
-	} else if value >= 2.00 {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= 3.75:
+		status = Critical
+	case value >= 2.75:
+		status = Stressed
+	case value >= 2.00:
+		status = Elevated
+	case value >= 1.50:
+		status = Watch
+	default:
+		status = Clear
 	}
-
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value}, nil
 }
 
-// ScoreGasPrice scores US regular gasoline price ($/gallon).
 func ScoreGasPrice(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring gas price %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value > 4.25 {
-		status = Red
-	} else if value >= 3.50 {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= 5.00:
+		status = Critical
+	case value >= 4.00:
+		status = Stressed
+	case value >= 3.25:
+		status = Elevated
+	case value >= 2.75:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("$%.2f/gal", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("$%.2f/gal", value)}, nil
 }
 
-// ScoreMortgageRate scores the 30-year fixed mortgage rate (%).
 func ScoreMortgageRate(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring mortgage rate %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value > 7.0 {
-		status = Red
-	} else if value >= 5.5 {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= 8.50:
+		status = Critical
+	case value >= 7.00:
+		status = Stressed
+	case value >= 6.00:
+		status = Elevated
+	case value >= 5.00:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.2f%% APR", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.2f%% APR", value)}, nil
 }
 
-// ScoreRentalVacancy scores the rental vacancy rate (%). Higher vacancy = more supply = lower pressure.
+// ScoreRentalVacancy scores the rental vacancy rate (%). Higher vacancy = more supply = lower stress.
 func ScoreRentalVacancy(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring rental vacancy %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value < 5.0 {
-		status = Red
-	} else if value < 7.0 {
-		status = Yellow
+	var status Status
+	switch {
+	case value < 4.5:
+		status = Critical
+	case value < 5.5:
+		status = Stressed
+	case value < 6.5:
+		status = Elevated
+	case value < 7.5:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.1f%% vacant", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.1f%% vacant", value)}, nil
 }
 
 // ScoreRentYoY computes year-over-year rent inflation from the CPI rent component.
@@ -136,328 +165,332 @@ func ScoreRentYoY(observations []fred.Observation) (*IndicatorResult, error) {
 	if vals[12] == 0 {
 		return nil, fmt.Errorf("ScoreRentYoY: prior year value is zero")
 	}
-
 	yoy := (vals[0] - vals[12]) / vals[12] * 100
 	log.Printf("Rent YoY: current=%f, priorYear=%f, yoy=%.2f%%", vals[0], vals[12], yoy)
-
-	status := Green
-	if yoy >= 7.0 {
-		status = Red
-	} else if yoy >= 4.0 {
-		status = Yellow
+	var status Status
+	switch {
+	case yoy >= 9.0:
+		status = Critical
+	case yoy >= 6.0:
+		status = Stressed
+	case yoy >= 4.0:
+		status = Elevated
+	case yoy >= 2.5:
+		status = Watch
+	default:
+		status = Clear
 	}
 	return &IndicatorResult{
-		Name:   "Rent Inflation YoY",
-		Series: "CUSR0000SEHA",
-		Date:   dates[0],
-		Status: status,
-		Value:  yoy,
-		Note:   fmt.Sprintf("+%.1f%% YoY", yoy),
+		Name: "Rent Inflation YoY", Series: "CUSR0000SEHA", Date: dates[0],
+		Status: status, Value: yoy, Note: fmt.Sprintf("+%.1f%% YoY", yoy),
 	}, nil
 }
 
-// ScoreConsumerDelinquency scores a generic consumer loan delinquency rate (%).
-func ScoreConsumerDelinquency(name, series, date string, value float64, redThresh, yellowThresh float64) (*IndicatorResult, error) {
+// ScoreConsumerDelinquency scores a consumer loan delinquency rate (%).
+// Thresholds in ascending stress order: watch, elevated, stressed, critical.
+func ScoreConsumerDelinquency(name, series, date string, value, watchT, elevatedT, stressedT, criticalT float64) (*IndicatorResult, error) {
 	log.Printf("Scoring consumer delinquency %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= redThresh {
-		status = Red
-	} else if value >= yellowThresh {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= criticalT:
+		status = Critical
+	case value >= stressedT:
+		status = Stressed
+	case value >= elevatedT:
+		status = Elevated
+	case value >= watchT:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.2f%% past due", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.2f%% past due", value)}, nil
 }
 
 // ScoreChargeOffRate scores a loan charge-off rate (%).
-func ScoreChargeOffRate(name, series, date string, value float64, redThresh, yellowThresh float64) (*IndicatorResult, error) {
+// Thresholds in ascending stress order: watch, elevated, stressed, critical.
+func ScoreChargeOffRate(name, series, date string, value, watchT, elevatedT, stressedT, criticalT float64) (*IndicatorResult, error) {
 	log.Printf("Scoring charge-off rate %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= redThresh {
-		status = Red
-	} else if value >= yellowThresh {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= criticalT:
+		status = Critical
+	case value >= stressedT:
+		status = Stressed
+	case value >= elevatedT:
+		status = Elevated
+	case value >= watchT:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.2f%% charged off", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.2f%% charged off", value)}, nil
 }
 
 func ScoreRecessionProb(name, series, date string, value float64, err error) (*IndicatorResult, error) {
 	log.Printf("Scoring recession prob %s (%s): value=%f, date=%s, err=%v", name, series, value, date, err)
 	if err != nil {
 		return &IndicatorResult{
-			Name:   name,
-			Series: series,
-			Date:   "N/A",
-			Status: Yellow,
-			Value:  0,
-			Note:   fmt.Sprintf("unavailable in this run: %v", err),
+			Name: name, Series: series, Date: "N/A", Status: Watch, Value: 0,
+			Note: fmt.Sprintf("unavailable in this run: %v", err),
 		}, nil
 	}
-
-	status := Green
-	if value >= 0.30 {
-		status = Red
-	} else if value >= 0.20 {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= 0.60:
+		status = Critical
+	case value >= 0.35:
+		status = Stressed
+	case value >= 0.20:
+		status = Elevated
+	case value >= 0.10:
+		status = Watch
+	default:
+		status = Clear
 	}
-
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value}, nil
 }
 
-// ScoreJoblessClaims scores initial jobless claims (ICSA). Unit: raw count.
 func ScoreJoblessClaims(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring jobless claims %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= 350000 {
-		status = Red
-	} else if value >= 280000 {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= 400000:
+		status = Critical
+	case value >= 325000:
+		status = Stressed
+	case value >= 270000:
+		status = Elevated
+	case value >= 230000:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.0fK/wk", value/1000),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.0fK/wk", value/1000)}, nil
 }
 
-// ScoreSahmDirect scores the Sahm Rule real-time indicator directly (SAHMREALTIME).
 func ScoreSahmDirect(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring Sahm direct %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= 0.50 {
-		status = Red
-	} else if value >= 0.35 {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= 0.70:
+		status = Critical // well into recession
+	case value >= 0.50:
+		status = Stressed // triggered
+	case value >= 0.35:
+		status = Elevated // approaching trigger
+	case value >= 0.20:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.2f", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.2f", value)}, nil
 }
 
-// ScoreVIX scores the CBOE Volatility Index (VIXCLS).
 func ScoreVIX(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring VIX %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= 30 {
-		status = Red
-	} else if value >= 20 {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= 40:
+		status = Critical
+	case value >= 28:
+		status = Stressed
+	case value >= 20:
+		status = Elevated
+	case value >= 15:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.1f", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.1f", value)}, nil
 }
 
-// ScoreFinancialStress scores a financial stress index (STLFSI4 or NFCI).
-// Values above 0 indicate above-average stress; yellowThresh and redThresh are the thresholds.
-func ScoreFinancialStress(name, series, date string, value, yellowThresh, redThresh float64) (*IndicatorResult, error) {
+// ScoreFinancialStress scores a financial stress index (STLFSI4, NFCI).
+// Thresholds in ascending stress order: watch, elevated, stressed, critical.
+func ScoreFinancialStress(name, series, date string, value, watchT, elevatedT, stressedT, criticalT float64) (*IndicatorResult, error) {
 	log.Printf("Scoring financial stress %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= redThresh {
-		status = Red
-	} else if value >= yellowThresh {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= criticalT:
+		status = Critical
+	case value >= stressedT:
+		status = Stressed
+	case value >= elevatedT:
+		status = Elevated
+	case value >= watchT:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.3f", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.3f", value)}, nil
 }
 
-// ScoreSavingsRate scores the personal saving rate (PSAVERT). Higher is better.
+// ScoreSavingsRate scores the personal saving rate (PSAVERT). Higher is better (inverted scale).
 func ScoreSavingsRate(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring savings rate %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value < 3.0 {
-		status = Red
-	} else if value < 6.0 {
-		status = Yellow
+	var status Status
+	switch {
+	case value < 2.0:
+		status = Critical
+	case value < 3.5:
+		status = Stressed
+	case value < 5.0:
+		status = Elevated
+	case value < 8.0:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.1f%%", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.1f%%", value)}, nil
 }
 
-// ScoreU6 scores the U-6 broad unemployment rate (U6RATE).
 func ScoreU6(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring U-6 %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= 12.0 {
-		status = Red
-	} else if value >= 9.0 {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= 12.5:
+		status = Critical
+	case value >= 10.0:
+		status = Stressed
+	case value >= 8.0:
+		status = Elevated
+	case value >= 6.5:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.1f%%", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.1f%%", value)}, nil
 }
 
 // ScoreConsumerSentiment scores the U of Michigan consumer sentiment index (UMCSENT). Higher is better.
 func ScoreConsumerSentiment(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring consumer sentiment %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value < 60.0 {
-		status = Red
-	} else if value < 75.0 {
-		status = Yellow
+	var status Status
+	switch {
+	case value < 48:
+		status = Critical
+	case value < 60:
+		status = Stressed
+	case value < 72:
+		status = Elevated
+	case value < 85:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.1f", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.1f", value)}, nil
 }
 
-// ScoreDebtGDP scores the federal debt as a percent of GDP (GFDEGDQ188S).
 func ScoreDebtGDP(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring debt/GDP %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= 130.0 {
-		status = Red
-	} else if value >= 100.0 {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= 135:
+		status = Critical
+	case value >= 115:
+		status = Stressed
+	case value >= 100:
+		status = Elevated
+	case value >= 80:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.1f%%", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.1f%%", value)}, nil
 }
 
-// ScoreOilPrice scores the WTI crude oil spot price (DCOILWTICO).
 func ScoreOilPrice(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring oil price %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= 100.0 {
-		status = Red
-	} else if value >= 80.0 {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= 115:
+		status = Critical
+	case value >= 95:
+		status = Stressed
+	case value >= 80:
+		status = Elevated
+	case value >= 65:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("$%.2f/bbl", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("$%.2f/bbl", value)}, nil
 }
 
-// ScoreBreakevenInflation scores the 10-year breakeven inflation rate (T10YIE).
 func ScoreBreakevenInflation(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring breakeven inflation %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= 3.0 {
-		status = Red
-	} else if value >= 2.5 {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= 3.75:
+		status = Critical
+	case value >= 3.00:
+		status = Stressed
+	case value >= 2.50:
+		status = Elevated
+	case value >= 2.00:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.2f%%", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.2f%%", value)}, nil
 }
 
-// ScoreMortgageDelinquency scores the single-family residential mortgage delinquency rate (DRSFRMACBS).
 func ScoreMortgageDelinquency(name, series, date string, value float64) (*IndicatorResult, error) {
 	log.Printf("Scoring mortgage delinquency %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= 4.0 {
-		status = Red
-	} else if value >= 2.5 {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= 5.0:
+		status = Critical
+	case value >= 3.5:
+		status = Stressed
+	case value >= 2.5:
+		status = Elevated
+	case value >= 1.5:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.2f%% past due", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.2f%% past due", value)}, nil
 }
 
-// ScoreSeriouslyDelinquent scores 90+ day past due / foreclosure rates (RCMFLB* series).
-// These are balance-weighted rates at large banks and include loans in active foreclosure.
-func ScoreSeriouslyDelinquent(name, series, date string, value, yellowThresh, redThresh float64) (*IndicatorResult, error) {
+// ScoreSeriouslyDelinquent scores 90+ DPD / foreclosure rates at large banks.
+// Thresholds in ascending stress order: watch, elevated, stressed, critical.
+func ScoreSeriouslyDelinquent(name, series, date string, value, watchT, elevatedT, stressedT, criticalT float64) (*IndicatorResult, error) {
 	log.Printf("Scoring seriously delinquent %s (%s): value=%f, date=%s", name, series, value, date)
-	status := Green
-	if value >= redThresh {
-		status = Red
-	} else if value >= yellowThresh {
-		status = Yellow
+	var status Status
+	switch {
+	case value >= criticalT:
+		status = Critical
+	case value >= stressedT:
+		status = Stressed
+	case value >= elevatedT:
+		status = Elevated
+	case value >= watchT:
+		status = Watch
+	default:
+		status = Clear
 	}
-	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   date,
-		Status: status,
-		Value:  value,
-		Note:   fmt.Sprintf("%.2f%%", value),
-	}, nil
+	return &IndicatorResult{Name: name, Series: series, Date: date, Status: status, Value: value,
+		Note: fmt.Sprintf("%.2f%%", value)}, nil
 }
 
-// ScoreYoYChange computes a year-over-year (or period-over-period) percent change and scores it.
-// observations must be in descending order (latest first).
-// nLookback is how many observations back to compare (e.g. 12 for monthly YoY, 252 for daily YoY).
-// If higherIsBad=true, a positive change is stress (e.g. debt); if false, a decline is stress (e.g. stocks).
-func ScoreYoYChange(name, series string, observations []fred.Observation, nLookback int, yellowThresh, redThresh float64, higherIsBad bool) (*IndicatorResult, error) {
+// ScoreYoYChange computes a year-over-year percent change and scores it.
+// Observations must be in descending order (latest first).
+// Thresholds apply to the stress direction: if higherIsBad=true, rising % is stress;
+// if false (e.g. stocks), falling % is stress. Thresholds are in ascending stress order.
+func ScoreYoYChange(name, series string, observations []fred.Observation, nLookback int, watchT, elevatedT, stressedT, criticalT float64, higherIsBad bool) (*IndicatorResult, error) {
 	var vals []float64
 	var dates []string
 	for _, obs := range observations {
@@ -475,34 +508,32 @@ func ScoreYoYChange(name, series string, observations []fred.Observation, nLookb
 	if vals[nLookback] == 0 {
 		return nil, fmt.Errorf("ScoreYoYChange %s: prior value is zero", series)
 	}
-
 	yoy := (vals[0] - vals[nLookback]) / math.Abs(vals[nLookback]) * 100
 	log.Printf("YoY %s: current=%f, prior=%f, yoy=%.2f%%", series, vals[0], vals[nLookback], yoy)
 
-	// Determine stress: if higherIsBad, rising = bad; if !higherIsBad, falling = bad
 	stress := yoy
 	if !higherIsBad {
 		stress = -yoy
 	}
-
-	status := Green
-	if stress >= redThresh {
-		status = Red
-	} else if stress >= yellowThresh {
-		status = Yellow
+	var status Status
+	switch {
+	case stress >= criticalT:
+		status = Critical
+	case stress >= stressedT:
+		status = Stressed
+	case stress >= elevatedT:
+		status = Elevated
+	case stress >= watchT:
+		status = Watch
+	default:
+		status = Clear
 	}
-
 	arrow := "+"
 	if yoy < 0 {
 		arrow = ""
 	}
 	return &IndicatorResult{
-		Name:   name,
-		Series: series,
-		Date:   dates[0],
-		Status: status,
-		Value:  yoy,
-		Note:   fmt.Sprintf("%s%.1f%% YoY", arrow, yoy),
+		Name: name, Series: series, Date: dates[0],
+		Status: status, Value: yoy, Note: fmt.Sprintf("%s%.1f%% YoY", arrow, yoy),
 	}, nil
 }
-

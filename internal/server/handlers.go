@@ -40,12 +40,23 @@ type CryptoResponse struct {
 
 // ── Response types ────────────────────────────────────────────────────────────
 
+type ClusterScore struct {
+	Key        string            `json:"key"`
+	Name       string            `json:"name"`
+	Icon       string            `json:"icon"`
+	Score      int               `json:"score"`
+	Status     indicators.Status `json:"status"`
+	AlertCount int               `json:"alert_count"` // indicators above CLEAR
+	Total      int               `json:"total"`
+}
+
 type IndicatorsResponse struct {
 	Success     bool                          `json:"success"`
 	Data        []*indicators.IndicatorResult `json:"data"`
 	StressScore int                           `json:"stress_score"`
 	StressBand  string                        `json:"stress_band"`
 	VanStatus   string                        `json:"van_status"`
+	Clusters    []ClusterScore                `json:"clusters"`
 	FetchedAt   string                        `json:"fetched_at"`
 	Error       string                        `json:"error,omitempty"`
 }
@@ -282,12 +293,83 @@ var stressWeights = map[string]float64{
 	"DCOILWTICO":    0.03,
 }
 
-func computeStress(results []*indicators.IndicatorResult) (score int, band string, vanStatus string) {
-	statusScore := map[indicators.Status]float64{
-		indicators.Green:  0,
-		indicators.Yellow: 50,
-		indicators.Red:    100,
+var statusScore = map[indicators.Status]float64{
+	indicators.Clear:    0,
+	indicators.Watch:    25,
+	indicators.Elevated: 50,
+	indicators.Stressed: 75,
+	indicators.Critical: 100,
+}
+
+// clusterDefs groups related series for the cluster score strip.
+var clusterDefs = []struct {
+	Key    string
+	Name   string
+	Icon   string
+	Series []string
+}{
+	{"recession", "Recession Risk",   "☠️",  []string{"RECPROUSM156N", "SAHMREALTIME", "ICSA", "UNRATE", "U6RATE"}},
+	{"financial", "Financial Stress", "🧨",  []string{"STLFSI4", "NFCI", "BAA10YM", "VIXCLS"}},
+	{"credit",    "Yield & Credit",   "📉",  []string{"T10Y2Y", "T10Y3MM", "T10YIE", "DTWEXBGS"}},
+	{"consumer",  "Consumer Health",  "💳",  []string{"PSAVERT", "UMCSENT", "DRCCLACBS", "DROCLACBS", "CORCCACBS", "CORCACBS", "TOTALNS"}},
+	{"housing",   "Housing Stress",   "🏚️", []string{"MORTGAGE30US", "CUSR0000SEHA", "CSUSHPISA", "DRSFRMACBS", "RRVRUSQ156N", "RCMFLBBALDPDPCT30P", "RCMFLBBALDPDPCT90P"}},
+	{"macro",     "Macro & Markets",  "💣",  []string{"GFDEGDQ188S", "DCOILWTICO", "SP500"}},
+}
+
+func scoreToStatus(s int) indicators.Status {
+	switch {
+	case s >= 87:
+		return indicators.Critical
+	case s >= 62:
+		return indicators.Stressed
+	case s >= 37:
+		return indicators.Elevated
+	case s >= 12:
+		return indicators.Watch
+	default:
+		return indicators.Clear
 	}
+}
+
+func computeClusterScores(results []*indicators.IndicatorResult) []ClusterScore {
+	byKey := make(map[string]*indicators.IndicatorResult, len(results))
+	for _, r := range results {
+		byKey[r.Series] = r
+	}
+	out := make([]ClusterScore, 0, len(clusterDefs))
+	for _, def := range clusterDefs {
+		var total int
+		var sum float64
+		var alertCount int
+		for _, s := range def.Series {
+			r, ok := byKey[s]
+			if !ok {
+				continue
+			}
+			total++
+			sum += statusScore[r.Status]
+			if r.Status != indicators.Clear {
+				alertCount++
+			}
+		}
+		score := 0
+		if total > 0 {
+			score = int(math.Round(sum / float64(total)))
+		}
+		out = append(out, ClusterScore{
+			Key:        def.Key,
+			Name:       def.Name,
+			Icon:       def.Icon,
+			Score:      score,
+			Status:     scoreToStatus(score),
+			AlertCount: alertCount,
+			Total:      total,
+		})
+	}
+	return out
+}
+
+func computeStress(results []*indicators.IndicatorResult) (score int, band string, vanStatus string) {
 	var totalW, weighted float64
 	for _, r := range results {
 		w, ok := stressWeights[r.Series]
@@ -301,11 +383,11 @@ func computeStress(results []*indicators.IndicatorResult) (score int, band strin
 		score = int(math.Round(weighted / totalW))
 	}
 	switch {
-	case score >= 85:
+	case score >= 75:
 		band, vanStatus = "CRITICAL", "HIGH STRESS — GET TO THE VAN"
-	case score >= 67:
+	case score >= 55:
 		band, vanStatus = "WARNING", "MOBILITY WINDOW NARROWING"
-	case score >= 34:
+	case score >= 30:
 		band, vanStatus = "ELEVATED", "WATCH CONDITIONS"
 	default:
 		band, vanStatus = "NORMAL", "THE VAN IS SECURE"
@@ -336,12 +418,14 @@ func (s *Server) HandleIndicators(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	score, band, vanStatus := computeStress(results)
+	clusters := computeClusterScores(results)
 	respondJSON(w, IndicatorsResponse{
 		Success:     true,
 		Data:        results,
 		StressScore: score,
 		StressBand:  band,
 		VanStatus:   vanStatus,
+		Clusters:    clusters,
 		FetchedAt:   fetchedAt.Format(time.RFC3339),
 	}, http.StatusOK)
 }
@@ -1200,7 +1284,7 @@ func fetchAllIndicators(client *fred.Client) ([]*indicators.IndicatorResult, err
 		case "STLFSI4":
 			if obs, err := client.FetchSeries(s, 1); err == nil && len(obs) > 0 {
 				val, _ := fred.ParseFloat(obs[0].Value)
-				res, _ := indicators.ScoreFinancialStress("St. Louis Financial Stress", s, obs[0].Date, val, 0.0, 1.0)
+				res, _ := indicators.ScoreFinancialStress("St. Louis Financial Stress", s, obs[0].Date, val, -0.5, 0.0, 0.5, 1.5)
 				results = append(results, res)
 			} else {
 				log.Printf("[FRED] %s error: %v", s, err)
@@ -1209,7 +1293,7 @@ func fetchAllIndicators(client *fred.Client) ([]*indicators.IndicatorResult, err
 		case "NFCI":
 			if obs, err := client.FetchSeries(s, 1); err == nil && len(obs) > 0 {
 				val, _ := fred.ParseFloat(obs[0].Value)
-				res, _ := indicators.ScoreFinancialStress("Chicago Fed Fin. Conditions", s, obs[0].Date, val, 0.0, 0.5)
+				res, _ := indicators.ScoreFinancialStress("Chicago Fed Fin. Conditions", s, obs[0].Date, val, -0.3, -0.1, 0.3, 0.7)
 				results = append(results, res)
 			} else {
 				log.Printf("[FRED] %s error: %v", s, err)
@@ -1273,7 +1357,7 @@ func fetchAllIndicators(client *fred.Client) ([]*indicators.IndicatorResult, err
 		case "SP500":
 			// YoY: ~245 trading-day lookback. Request 270 to absorb missing-value gaps.
 			if obs, err := client.FetchSeries(s, 270); err == nil {
-				if res, err := indicators.ScoreYoYChange("S&P 500 YoY", s, obs, 245, 5.0, 15.0, false); err == nil {
+				if res, err := indicators.ScoreYoYChange("S&P 500 YoY", s, obs, 245, 3.0, 8.0, 15.0, 25.0, false); err == nil {
 					results = append(results, res)
 				} else {
 					log.Printf("[FRED] SP500 YoY: %v", err)
@@ -1306,7 +1390,7 @@ func fetchAllIndicators(client *fred.Client) ([]*indicators.IndicatorResult, err
 		case "CSUSHPISA":
 			// YoY: 12 monthly observations
 			if obs, err := client.FetchSeries(s, 14); err == nil {
-				if res, err := indicators.ScoreYoYChange("Case-Shiller Home Price YoY", s, obs, 12, 5.0, 10.0, true); err == nil {
+				if res, err := indicators.ScoreYoYChange("Case-Shiller Home Price YoY", s, obs, 12, 3.0, 6.0, 10.0, 15.0, true); err == nil {
 					results = append(results, res)
 				} else {
 					log.Printf("[FRED] CSUSHPISA YoY: %v", err)
@@ -1325,13 +1409,13 @@ func fetchAllIndicators(client *fred.Client) ([]*indicators.IndicatorResult, err
 		case "RCMFLBBALDPDPCT30P":
 			if obs, err := client.FetchSeries(s, 1); err == nil && len(obs) > 0 {
 				val, _ := fred.ParseFloat(obs[0].Value)
-				res, _ := indicators.ScoreSeriouslyDelinquent("Mortgage 30+ DPD (Large Banks)", s, obs[0].Date, val, 2.0, 3.5)
+				res, _ := indicators.ScoreSeriouslyDelinquent("Mortgage 30+ DPD (Large Banks)", s, obs[0].Date, val, 1.0, 2.0, 2.75, 3.5)
 				results = append(results, res)
 			}
 		case "RCMFLBBALDPDPCT90P":
 			if obs, err := client.FetchSeries(s, 1); err == nil && len(obs) > 0 {
 				val, _ := fred.ParseFloat(obs[0].Value)
-				res, _ := indicators.ScoreSeriouslyDelinquent("Mortgage 90+ DPD / Foreclosure", s, obs[0].Date, val, 1.5, 2.5)
+				res, _ := indicators.ScoreSeriouslyDelinquent("Mortgage 90+ DPD / Foreclosure", s, obs[0].Date, val, 0.6, 1.5, 2.0, 2.5)
 				results = append(results, res)
 			}
 
@@ -1339,25 +1423,25 @@ func fetchAllIndicators(client *fred.Client) ([]*indicators.IndicatorResult, err
 		case "DROCLACBS":
 			if obs, err := client.FetchSeries(s, 1); err == nil && len(obs) > 0 {
 				val, _ := fred.ParseFloat(obs[0].Value)
-				res, _ := indicators.ScoreConsumerDelinquency("Auto & Consumer Loans 30+ DPD", s, obs[0].Date, val, 2.8, 1.8)
+				res, _ := indicators.ScoreConsumerDelinquency("Auto & Consumer Loans 30+ DPD", s, obs[0].Date, val, 1.4, 1.8, 2.3, 2.8)
 				results = append(results, res)
 			}
 		case "DRCCLACBS":
 			if obs, err := client.FetchSeries(s, 1); err == nil && len(obs) > 0 {
 				val, _ := fred.ParseFloat(obs[0].Value)
-				res, _ := indicators.ScoreConsumerDelinquency("Credit Card Delinquency", s, obs[0].Date, val, 3.5, 2.5)
+				res, _ := indicators.ScoreConsumerDelinquency("Credit Card Delinquency", s, obs[0].Date, val, 1.8, 2.5, 3.0, 3.5)
 				results = append(results, res)
 			}
 		case "CORCACBS":
 			if obs, err := client.FetchSeries(s, 1); err == nil && len(obs) > 0 {
 				val, _ := fred.ParseFloat(obs[0].Value)
-				res, _ := indicators.ScoreChargeOffRate("Consumer Loan Charge-Offs", s, obs[0].Date, val, 3.5, 2.0)
+				res, _ := indicators.ScoreChargeOffRate("Consumer Loan Charge-Offs", s, obs[0].Date, val, 1.2, 2.0, 2.75, 3.5)
 				results = append(results, res)
 			}
 		case "CORCCACBS":
 			if obs, err := client.FetchSeries(s, 1); err == nil && len(obs) > 0 {
 				val, _ := fred.ParseFloat(obs[0].Value)
-				res, _ := indicators.ScoreChargeOffRate("Credit Card Charge-Offs", s, obs[0].Date, val, 5.0, 3.5)
+				res, _ := indicators.ScoreChargeOffRate("Credit Card Charge-Offs", s, obs[0].Date, val, 2.5, 3.5, 4.25, 5.0)
 				results = append(results, res)
 			}
 
@@ -1409,7 +1493,7 @@ func fetchAllIndicators(client *fred.Client) ([]*indicators.IndicatorResult, err
 		case "DTWEXBGS":
 			// Dollar index — YoY on ~245 trading-day lookback. Request 270 to absorb missing-value gaps.
 			if obs, err := client.FetchSeries(s, 270); err == nil {
-				if res, err := indicators.ScoreYoYChange("Dollar Index YoY", s, obs, 245, 5.0, 10.0, true); err == nil {
+				if res, err := indicators.ScoreYoYChange("Dollar Index YoY", s, obs, 245, 2.0, 5.0, 8.0, 12.0, true); err == nil {
 					results = append(results, res)
 				} else {
 					log.Printf("[FRED] DTWEXBGS YoY: %v", err)
@@ -1420,7 +1504,7 @@ func fetchAllIndicators(client *fred.Client) ([]*indicators.IndicatorResult, err
 		case "TOTALNS":
 			// Total consumer credit outstanding — YoY on 12 monthly obs
 			if obs, err := client.FetchSeries(s, 14); err == nil {
-				if res, err := indicators.ScoreYoYChange("Total Consumer Credit YoY", s, obs, 12, 4.0, 8.0, true); err == nil {
+				if res, err := indicators.ScoreYoYChange("Total Consumer Credit YoY", s, obs, 12, 2.0, 4.0, 7.0, 10.0, true); err == nil {
 					results = append(results, res)
 				} else {
 					log.Printf("[FRED] TOTALNS YoY: %v", err)
