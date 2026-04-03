@@ -4,10 +4,10 @@ A Go CLI tool that pulls a dashboard of bond and recession risk indicators from 
 
 ## Setup
 
-1. Get a FRED API key (or use the development one provided).
+1. Get a free FRED API key at https://fred.stlouisfed.org/docs/api/api_key.html
 2. Export the API key:
    ```bash
-   export FRED_API_KEY=REDACTED_FRED_API_KEY
+   export FRED_API_KEY=your_fred_api_key_here
    ```
 
 ## Usage
