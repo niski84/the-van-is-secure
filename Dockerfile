@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # The Van Is Secure — single Go binary + embedded web UI.
 
-FROM golang:1.23-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 
 COPY go.mod ./
@@ -19,7 +19,7 @@ RUN apk add --no-cache ca-certificates tzdata wget \
 WORKDIR /app
 COPY --from=build /out/keep-it-mobile /usr/local/bin/keep-it-mobile
 
-RUN mkdir -p /tmp/van-img-cache && chown -R nonroot:nonroot /tmp/van-img-cache
+RUN mkdir -p /tmp/van-img-cache /data && chown -R nonroot:nonroot /tmp/van-img-cache /data
 
 USER nonroot:nonroot
 EXPOSE 8080
