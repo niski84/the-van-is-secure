@@ -19,3 +19,6 @@ vendor/
 .idea/
 .vscode/
 *.swp
+*.db
+*.db-shm
+*.db-wal

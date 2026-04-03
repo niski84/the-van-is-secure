@@ -1,13 +1,16 @@
 package server
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"keep-it-mobile/internal/auth"
 	"keep-it-mobile/internal/crypto"
 	"keep-it-mobile/internal/feeds"
 	"keep-it-mobile/internal/fred"
 	"keep-it-mobile/internal/imgcache"
 	"keep-it-mobile/internal/indicators"
+	"keep-it-mobile/internal/watchboard"
 	"log"
 	"math"
 	"net/http"
@@ -210,6 +213,7 @@ type cachedCrypto struct {
 }
 
 type Server struct {
+	db           *sql.DB
 	fredClient   *fred.Client
 	cryptoClient *crypto.Client
 	feedFetcher  *feeds.Fetcher
@@ -228,8 +232,9 @@ type Server struct {
 	cryptoTTL   time.Duration
 }
 
-func NewServer(fredClient *fred.Client, feedFetcher *feeds.Fetcher, ic *imgcache.Cache) *Server {
+func NewServer(db *sql.DB, fredClient *fred.Client, feedFetcher *feeds.Fetcher, ic *imgcache.Cache) *Server {
 	s := &Server{
+		db:            db,
 		fredClient:    fredClient,
 		cryptoClient:  crypto.NewClient(15 * time.Second),
 		feedFetcher:   feedFetcher,
@@ -242,6 +247,217 @@ func NewServer(fredClient *fred.Client, feedFetcher *feeds.Fetcher, ic *imgcache
 	}
 	go s.evictLoop()
 	return s
+}
+
+// sessionUserID extracts the authenticated user ID from the session cookie, or "" if unauthenticated.
+func (s *Server) sessionUserID(r *http.Request) string {
+	if s.db == nil {
+		return ""
+	}
+	c, err := r.Cookie(auth.CookieName)
+	if err != nil {
+		return ""
+	}
+	uid, err := auth.ValidateSession(s.db, c.Value)
+	if err != nil {
+		return ""
+	}
+	return uid
+}
+
+// HandleAuthRequest handles POST /api/auth/request — sends a magic link.
+func (s *Server) HandleAuthRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, map[string]interface{}{"error": "method not allowed"}, http.StatusMethodNotAllowed)
+		return
+	}
+	if s.db == nil {
+		respondJSON(w, map[string]interface{}{"error": "auth not configured"}, http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		respondJSON(w, map[string]interface{}{"error": "invalid request"}, http.StatusBadRequest)
+		return
+	}
+	email := strings.TrimSpace(strings.ToLower(body.Email))
+	if !strings.Contains(email, "@") {
+		respondJSON(w, map[string]interface{}{"error": "invalid email"}, http.StatusBadRequest)
+		return
+	}
+	token, err := auth.RequestMagicLink(s.db, email)
+	if err == auth.ErrRateLimited {
+		respondJSON(w, map[string]interface{}{"error": err.Error()}, http.StatusTooManyRequests)
+		return
+	}
+	if err != nil {
+		log.Printf("[AUTH] request magic link: %v", err)
+		respondJSON(w, map[string]interface{}{"error": "internal error"}, http.StatusInternalServerError)
+		return
+	}
+	log.Printf("[AUTH] magic link requested for %s (token suppressed)", email)
+	_ = token // token is sent via email in production; logged only in dev via email config
+	respondJSON(w, map[string]interface{}{"ok": true}, http.StatusOK)
+}
+
+// HandleAuthVerify handles GET /api/auth/verify?token=... — validates magic link and sets session cookie.
+func (s *Server) HandleAuthVerify(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		http.Redirect(w, r, "/?auth=error", http.StatusFound)
+		return
+	}
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		http.Redirect(w, r, "/?auth=error", http.StatusFound)
+		return
+	}
+	sessionToken, err := auth.VerifyMagicLink(s.db, token)
+	if err != nil {
+		log.Printf("[AUTH] verify: %v", err)
+		http.Redirect(w, r, "/?auth=error", http.StatusFound)
+		return
+	}
+	// Ensure user has a default watchboard.
+	userID, _ := auth.ValidateSession(s.db, sessionToken)
+	if userID != "" {
+		if err := watchboard.EnsureDefault(s.db, userID); err != nil {
+			log.Printf("[AUTH] ensure default watchboard: %v", err)
+		}
+	}
+	secure := r.Header.Get("X-Forwarded-Proto") == "https"
+	http.SetCookie(w, &http.Cookie{
+		Name:     auth.CookieName,
+		Value:    sessionToken,
+		Path:     "/",
+		MaxAge:   int((30 * 24 * time.Hour).Seconds()),
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// HandleAuthLogout handles POST /api/auth/logout — clears the session.
+func (s *Server) HandleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondJSON(w, map[string]interface{}{"error": "method not allowed"}, http.StatusMethodNotAllowed)
+		return
+	}
+	if s.db != nil {
+		if c, err := r.Cookie(auth.CookieName); err == nil {
+			_ = auth.DeleteSession(s.db, c.Value)
+		}
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:   auth.CookieName,
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
+	respondJSON(w, map[string]interface{}{"ok": true}, http.StatusOK)
+}
+
+// HandleMe handles GET /api/me — returns current user info or 401.
+func (s *Server) HandleMe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondJSON(w, map[string]interface{}{"error": "method not allowed"}, http.StatusMethodNotAllowed)
+		return
+	}
+	uid := s.sessionUserID(r)
+	if uid == "" {
+		respondJSON(w, map[string]interface{}{"authenticated": false}, http.StatusOK)
+		return
+	}
+	u, err := auth.GetUser(s.db, uid)
+	if err != nil || u == nil {
+		respondJSON(w, map[string]interface{}{"authenticated": false}, http.StatusOK)
+		return
+	}
+	respondJSON(w, map[string]interface{}{
+		"authenticated": true,
+		"email":         u.Email,
+		"tier":          u.Tier,
+	}, http.StatusOK)
+}
+
+// HandleWatchboard handles GET and PUT /api/watchboard — get or update module config.
+func (s *Server) HandleWatchboard(w http.ResponseWriter, r *http.Request) {
+	uid := s.sessionUserID(r)
+	if uid == "" {
+		respondJSON(w, map[string]interface{}{"error": "unauthenticated"}, http.StatusUnauthorized)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		boards, err := watchboard.List(s.db, uid)
+		if err != nil {
+			log.Printf("[WATCHBOARD] list: %v", err)
+			respondJSON(w, map[string]interface{}{"error": "internal error"}, http.StatusInternalServerError)
+			return
+		}
+		// Return the default (or first) watchboard's module config.
+		var modules []watchboard.ModuleConfig
+		for _, b := range boards {
+			if b.IsDefault {
+				modules = b.Modules
+				break
+			}
+		}
+		if modules == nil && len(boards) > 0 {
+			modules = boards[0].Modules
+		}
+		if modules == nil {
+			modules = watchboard.DefaultModules()
+		}
+		respondJSON(w, map[string]interface{}{"modules": modules}, http.StatusOK)
+
+	case http.MethodPut:
+		var body struct {
+			Modules []watchboard.ModuleConfig `json:"modules"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Modules) == 0 {
+			respondJSON(w, map[string]interface{}{"error": "invalid request"}, http.StatusBadRequest)
+			return
+		}
+		boards, err := watchboard.List(s.db, uid)
+		if err != nil {
+			respondJSON(w, map[string]interface{}{"error": "internal error"}, http.StatusInternalServerError)
+			return
+		}
+		// Find default board, or create one.
+		var board *watchboard.Watchboard
+		for i := range boards {
+			if boards[i].IsDefault {
+				board = &boards[i]
+				break
+			}
+		}
+		if board == nil && len(boards) > 0 {
+			board = &boards[0]
+		}
+		if board == nil {
+			b, err := watchboard.Create(s.db, uid, "Full View", body.Modules, true)
+			if err != nil {
+				respondJSON(w, map[string]interface{}{"error": "internal error"}, http.StatusInternalServerError)
+				return
+			}
+			respondJSON(w, map[string]interface{}{"modules": b.Modules}, http.StatusOK)
+			return
+		}
+		updated, err := watchboard.Update(s.db, board.ID, uid, board.Name, body.Modules, board.IsDefault)
+		if err != nil {
+			log.Printf("[WATCHBOARD] update: %v", err)
+			respondJSON(w, map[string]interface{}{"error": "internal error"}, http.StatusInternalServerError)
+			return
+		}
+		respondJSON(w, map[string]interface{}{"modules": updated.Modules}, http.StatusOK)
+
+	default:
+		respondJSON(w, map[string]interface{}{"error": "method not allowed"}, http.StatusMethodNotAllowed)
+	}
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

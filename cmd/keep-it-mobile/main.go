@@ -4,6 +4,8 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"keep-it-mobile/internal/auth"
+	"keep-it-mobile/internal/db"
 	"keep-it-mobile/internal/feeds"
 	"keep-it-mobile/internal/fred"
 	"keep-it-mobile/internal/imgcache"
@@ -36,6 +38,29 @@ func main() {
 
 	feedFetcher := feeds.NewFetcher(feeds.DefaultSources)
 
+	// SQLite for user auth and watchboard preferences.
+	dataDir := os.Getenv("VAN_DATA_DIR")
+	if dataDir == "" {
+		dataDir = os.TempDir()
+	}
+	database, err := db.Open(filepath.Join(dataDir, "van.db"))
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	defer database.Close()
+	log.Printf("[DB] opened at %s/van.db", dataDir)
+
+	// Prune expired sessions and magic links daily.
+	go func() {
+		t := time.NewTicker(24 * time.Hour)
+		defer t.Stop()
+		for range t.C {
+			if err := auth.PruneExpired(database); err != nil {
+				log.Printf("[DB] prune: %v", err)
+			}
+		}
+	}()
+
 	// Image disk cache — defaults to $TMPDIR/van-img-cache, overridable via IMG_CACHE_DIR
 	cacheDir := os.Getenv("IMG_CACHE_DIR")
 	if cacheDir == "" {
@@ -58,7 +83,7 @@ func main() {
 		}
 	}()
 
-	srv := server.NewServer(fredClient, feedFetcher, ic)
+	srv := server.NewServer(database, fredClient, feedFetcher, ic)
 
 	// Pre-warm the FRED cache at startup so the first user request is never cold.
 	// Re-warms every 23 h to stay within the 24 h TTL — at most one FRED session per day.
@@ -83,6 +108,12 @@ func main() {
 	mux.HandleFunc("/api/crypto", srv.HandleCrypto)
 	mux.HandleFunc("/api/article-image", srv.HandleArticleImage)
 	mux.HandleFunc("/img/cache/", srv.HandleCachedImage)
+	// Auth + watchboard
+	mux.HandleFunc("/api/auth/request", srv.HandleAuthRequest)
+	mux.HandleFunc("/api/auth/verify", srv.HandleAuthVerify)
+	mux.HandleFunc("/api/auth/logout", srv.HandleAuthLogout)
+	mux.HandleFunc("/api/me", srv.HandleMe)
+	mux.HandleFunc("/api/watchboard", srv.HandleWatchboard)
 
 	webRoot, err := fs.Sub(webFS, "web")
 	if err != nil {
